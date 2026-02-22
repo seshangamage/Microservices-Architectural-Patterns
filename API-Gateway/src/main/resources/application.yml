@@ -1,0 +1,19 @@
+server:
+  port: 8080
+
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: inventory-service
+          uri: http://host.docker.internal:8083
+          predicates:
+            - Path=/inventory/**
+        - id: payments-service
+          uri: http://host.docker.internal:8082
+          predicates:
+            - Path=/payments/**
+        - id: order-service
+          uri: http://host.docker.internal:8081
+          predicates:
+            - Path=/orders/**

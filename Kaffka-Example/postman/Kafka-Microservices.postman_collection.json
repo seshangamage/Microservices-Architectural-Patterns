@@ -1,0 +1,128 @@
+{
+  "info": {
+    "_postman_id": "f2f3cb8d-8f18-4bc2-a8f1-7dd2f5d9bb23",
+    "name": "Kafka Microservices (Gateway)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Test collection for Gateway + Order/Inventory/Notification + Kafka flow"
+  },
+  "item": [
+    {
+      "name": "1) Gateway Health",
+      "item": [
+        {
+          "name": "Inventory Health via Gateway",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["inventory", "health"]
+            },
+            "description": "Checks inventory service health through API Gateway"
+          }
+        },
+        {
+          "name": "Notification Health via Gateway",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notify/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["notify", "health"]
+            },
+            "description": "Checks notification service health through API Gateway"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2) Order Flow",
+      "item": [
+        {
+          "name": "Create Order (Publishes order.created)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 202', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "var data = pm.response.json();",
+                  "if (data && data.orderId) {",
+                  "    pm.collectionVariables.set('orderId', data.orderId);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"sku\": \"SKU-ABC\",\n  \"quantity\": 2\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"]
+            },
+            "description": "Creates an order; order-service emits order.created topic event"
+          }
+        },
+        {
+          "name": "Get Order Status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "var data = pm.response.json();",
+                  "pm.test('Has orderId and status', function () {",
+                  "    pm.expect(data).to.have.property('orderId');",
+                  "    pm.expect(data).to.have.property('status');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders/{{orderId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "{{orderId}}"]
+            },
+            "description": "Reads order status updated by inventory.reserved consumer"
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "orderId",
+      "value": "ORD-1001"
+    }
+  ]
+}

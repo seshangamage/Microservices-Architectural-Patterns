@@ -1,0 +1,4 @@
+C:\Code\SLIIT\4010SE-CloudComputing\Examples\Microservices-Architectural-Patterns\Kaffka-Example\inventory-service\src\main\java\com\example\inventory\controller\InventoryController.java
+C:\Code\SLIIT\4010SE-CloudComputing\Examples\Microservices-Architectural-Patterns\Kaffka-Example\inventory-service\src\main\java\com\example\inventory\InventoryServiceApplication.java
+C:\Code\SLIIT\4010SE-CloudComputing\Examples\Microservices-Architectural-Patterns\Kaffka-Example\inventory-service\src\main\java\com\example\inventory\messaging\OrderCreatedListener.java
+C:\Code\SLIIT\4010SE-CloudComputing\Examples\Microservices-Architectural-Patterns\Kaffka-Example\inventory-service\src\main\java\com\example\inventory\service\InventoryEventPublisher.java

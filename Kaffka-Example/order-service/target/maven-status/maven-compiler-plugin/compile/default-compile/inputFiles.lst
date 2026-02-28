@@ -1,0 +1,6 @@
+C:\Code\SLIIT\4010SE-CloudComputing\Examples\Microservices-Architectural-Patterns\Kaffka-Example\order-service\src\main\java\com\example\orders\controller\OrderController.java
+C:\Code\SLIIT\4010SE-CloudComputing\Examples\Microservices-Architectural-Patterns\Kaffka-Example\order-service\src\main\java\com\example\orders\messaging\InventoryReservedListener.java
+C:\Code\SLIIT\4010SE-CloudComputing\Examples\Microservices-Architectural-Patterns\Kaffka-Example\order-service\src\main\java\com\example\orders\model\OrderRequest.java
+C:\Code\SLIIT\4010SE-CloudComputing\Examples\Microservices-Architectural-Patterns\Kaffka-Example\order-service\src\main\java\com\example\orders\OrderServiceApplication.java
+C:\Code\SLIIT\4010SE-CloudComputing\Examples\Microservices-Architectural-Patterns\Kaffka-Example\order-service\src\main\java\com\example\orders\service\OrderEventPublisher.java
+C:\Code\SLIIT\4010SE-CloudComputing\Examples\Microservices-Architectural-Patterns\Kaffka-Example\order-service\src\main\java\com\example\orders\service\OrderStateStore.java

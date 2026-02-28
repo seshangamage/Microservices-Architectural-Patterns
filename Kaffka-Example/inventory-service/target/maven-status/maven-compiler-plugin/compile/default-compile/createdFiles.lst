@@ -1,0 +1,4 @@
+com\example\inventory\service\InventoryEventPublisher.class
+com\example\inventory\controller\InventoryController.class
+com\example\inventory\InventoryServiceApplication.class
+com\example\inventory\messaging\OrderCreatedListener.class

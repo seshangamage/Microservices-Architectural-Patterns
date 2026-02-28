@@ -1,0 +1,3 @@
+com\example\notification\NotificationServiceApplication.class
+com\example\notification\controller\NotificationController.class
+com\example\notification\messaging\NotificationEventListener.class

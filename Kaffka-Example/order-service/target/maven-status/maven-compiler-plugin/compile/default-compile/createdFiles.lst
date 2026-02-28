@@ -1,0 +1,6 @@
+com\example\orders\controller\OrderController.class
+com\example\orders\OrderServiceApplication.class
+com\example\orders\service\OrderEventPublisher.class
+com\example\orders\model\OrderRequest.class
+com\example\orders\messaging\InventoryReservedListener.class
+com\example\orders\service\OrderStateStore.class

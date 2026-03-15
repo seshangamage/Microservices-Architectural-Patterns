@@ -1,0 +1,169 @@
+# KAFFKA-EXAMPLE Azure Deployment Runbook (Windows PowerShell)
+# Project-specific services in this repo:
+# - gateway (8080)
+# - order-service (8081)
+# - inventory-service (8082)
+# - notification-service (8083)
+# - kafka (9092), kafka-ui (8080)
+
+# Run from repository root:
+# C:\Code\SLIIT\4010SE-CloudComputing\Examples\Microservices-Architectural-Patterns\Kaffka-Example
+
+# -----------------------------------------------------------------
+# 0) Prerequisites
+# -----------------------------------------------------------------
+# - Azure CLI + Docker Desktop
+# - Java 21 + Maven (required because Dockerfiles copy from target/*.jar)
+
+az extension add --name containerapp --upgrade
+az provider register --namespace Microsoft.App
+az provider register --namespace Microsoft.OperationalInsights
+
+# -----------------------------------------------------------------
+# 1) Variables (edit if needed)
+# -----------------------------------------------------------------
+$RG  = "microservices-rg"
+$LOC = "westus2"
+$ENV = "micro-env"
+$ACR = "sliitmicroregistry"
+$TAG = "v1"
+
+$IMG_GATEWAY      = "$ACR.azurecr.io/gateway:$TAG"
+$IMG_ORDER        = "$ACR.azurecr.io/order:$TAG"
+$IMG_INVENTORY    = "$ACR.azurecr.io/inventory:$TAG"
+$IMG_NOTIFICATION = "$ACR.azurecr.io/notification:$TAG"
+
+# Keep same KRaft cluster id for this single-node setup
+$KAFKA_CLUSTER_ID = "MkU3OEVBNTcwNTJENDM2Qk"
+
+# -----------------------------------------------------------------
+# 2) Login + base resources
+# -----------------------------------------------------------------
+az login
+# Optional: az account set --subscription "<SUBSCRIPTION_ID_OR_NAME>"
+
+az group create --name $RG --location $LOC
+az acr create --name $ACR --resource-group $RG --sku Basic --location $LOC
+az acr update --name $ACR --admin-enabled true
+az acr login --name $ACR
+
+$ACR_USER = az acr credential show --name $ACR --query username -o tsv
+$ACR_PASS = az acr credential show --name $ACR --query "passwords[0].value" -o tsv
+
+az containerapp env create --name $ENV --resource-group $RG --location $LOC
+
+# -----------------------------------------------------------------
+# 3) Build JARs for this project (required by current Dockerfiles)
+# -----------------------------------------------------------------
+$services = @("gateway", "order-service", "inventory-service", "notification-service")
+foreach ($svc in $services) {
+  Push-Location ".\\$svc"
+  mvn clean package -DskipTests
+  Pop-Location
+}
+
+# -----------------------------------------------------------------
+# 4) Build + push container images
+# -----------------------------------------------------------------
+docker build -t $IMG_GATEWAY .\gateway
+docker build -t $IMG_ORDER .\order-service
+docker build -t $IMG_INVENTORY .\inventory-service
+docker build -t $IMG_NOTIFICATION .\notification-service
+
+docker push $IMG_GATEWAY
+docker push $IMG_ORDER
+docker push $IMG_INVENTORY
+docker push $IMG_NOTIFICATION
+
+# -----------------------------------------------------------------
+# 5) Deploy Kafka (fixed for ACA single-node KRaft)
+# Key fixes:
+# - KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093
+# - KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
+# -----------------------------------------------------------------
+az containerapp create --name kafka --resource-group $RG --environment $ENV --image confluentinc/cp-kafka:7.6.0 --ingress internal --target-port 9092 --min-replicas 1 --env-vars KAFKA_NODE_ID=1 KAFKA_PROCESS_ROLES=broker,controller KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093 KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092 KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093 KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1 KAFKA_AUTO_CREATE_TOPICS_ENABLE=true CLUSTER_ID=$KAFKA_CLUSTER_ID
+
+# Enforce internal TCP ingress for broker port
+az containerapp ingress enable --name kafka --resource-group $RG --type internal --transport tcp --target-port 9092 --exposed-port 9092
+
+# Optional Kafka UI
+az containerapp create --name kafka-ui --resource-group $RG --environment $ENV --image provectuslabs/kafka-ui:latest --ingress external --target-port 8080 --min-replicas 1 --env-vars KAFKA_CLUSTERS_0_NAME=local KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
+
+# -----------------------------------------------------------------
+# 6) Deploy backend services
+# -----------------------------------------------------------------
+az containerapp create --name order-service --resource-group $RG --environment $ENV --image $IMG_ORDER --registry-server "$ACR.azurecr.io" --registry-username $ACR_USER --registry-password $ACR_PASS --ingress internal --target-port 8081 --min-replicas 1 --env-vars SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+
+az containerapp create --name inventory-service --resource-group $RG --environment $ENV --image $IMG_INVENTORY --registry-server "$ACR.azurecr.io" --registry-username $ACR_USER --registry-password $ACR_PASS --ingress internal --target-port 8082 --min-replicas 1 --env-vars SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+
+az containerapp create --name notification-service --resource-group $RG --environment $ENV --image $IMG_NOTIFICATION --registry-server "$ACR.azurecr.io" --registry-username $ACR_USER --registry-password $ACR_PASS --ingress internal --target-port 8083 --min-replicas 1 --env-vars SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+
+# -----------------------------------------------------------------
+# 7) Deploy gateway
+# Key fix for this project:
+# - override routes in ACA to use service discovery names (not host:port from file)
+# -----------------------------------------------------------------
+az containerapp create --name gateway --resource-group $RG --environment $ENV --image $IMG_GATEWAY --registry-server "$ACR.azurecr.io" --registry-username $ACR_USER --registry-password $ACR_PASS --ingress external --target-port 8080 --min-replicas 1 --env-vars SPRING_PROFILES_ACTIVE=docker SPRING_CLOUD_GATEWAY_ROUTES_0_ID=order-service SPRING_CLOUD_GATEWAY_ROUTES_0_URI=http://order-service "SPRING_CLOUD_GATEWAY_ROUTES_0_PREDICATES_0=Path=/orders/**" SPRING_CLOUD_GATEWAY_ROUTES_1_ID=inventory-service SPRING_CLOUD_GATEWAY_ROUTES_1_URI=http://inventory-service "SPRING_CLOUD_GATEWAY_ROUTES_1_PREDICATES_0=Path=/inventory/**" SPRING_CLOUD_GATEWAY_ROUTES_2_ID=notification-service SPRING_CLOUD_GATEWAY_ROUTES_2_URI=http://notification-service "SPRING_CLOUD_GATEWAY_ROUTES_2_PREDICATES_0=Path=/notify/**"
+
+# -----------------------------------------------------------------
+# 8) Verify
+# -----------------------------------------------------------------
+az containerapp list --resource-group $RG --output table
+az containerapp revision list --name kafka --resource-group $RG --output table
+az containerapp revision list --name gateway --resource-group $RG --output table
+az containerapp revision list --name order-service --resource-group $RG --output table
+az containerapp revision list --name inventory-service --resource-group $RG --output table
+az containerapp revision list --name notification-service --resource-group $RG --output table
+
+$GATEWAY_FQDN = az containerapp show --name gateway --resource-group $RG --query properties.configuration.ingress.fqdn -o tsv
+$GATEWAY_URL = "https://$GATEWAY_FQDN"
+$GATEWAY_URL
+
+# -----------------------------------------------------------------
+# 9) Test API (PowerShell-safe)
+# -----------------------------------------------------------------
+$payload = @{
+  orderId  = "ORD-1001"
+  sku      = "SKU-ABC"
+  quantity = 2
+} | ConvertTo-Json -Compress
+
+Invoke-RestMethod -Uri "$GATEWAY_URL/orders" -Method Post -ContentType "application/json" -Body $payload
+Invoke-RestMethod -Uri "$GATEWAY_URL/orders/ORD-1001" -Method Get
+
+# Optional curl.exe test with file payload (avoids quoting issues)
+$payloadPath = Join-Path $env:TEMP "order-payload.json"
+@'
+{"orderId":"ORD-1002","sku":"SKU-ABC","quantity":2}
+'@ | Set-Content -Path $payloadPath -NoNewline
+curl.exe --location "$GATEWAY_URL/orders" --header "Content-Type: application/json" --data-binary "@$payloadPath"
+
+# -----------------------------------------------------------------
+# 10) Re-deploy existing apps only (no re-create)
+# Use this section if apps already exist and you only changed code/images.
+# -----------------------------------------------------------------
+az containerapp update --name gateway --resource-group $RG --image $IMG_GATEWAY
+az containerapp update --name order-service --resource-group $RG --image $IMG_ORDER
+az containerapp update --name inventory-service --resource-group $RG --image $IMG_INVENTORY
+az containerapp update --name notification-service --resource-group $RG --image $IMG_NOTIFICATION
+
+# Re-apply critical env vars after updates
+az containerapp update --name kafka --resource-group $RG --set-env-vars KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093 KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092 KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
+az containerapp update --name order-service --resource-group $RG --set-env-vars SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+az containerapp update --name inventory-service --resource-group $RG --set-env-vars SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+az containerapp update --name notification-service --resource-group $RG --set-env-vars SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+az containerapp update --name gateway --resource-group $RG --set-env-vars SPRING_CLOUD_GATEWAY_ROUTES_0_URI=http://order-service SPRING_CLOUD_GATEWAY_ROUTES_1_URI=http://inventory-service SPRING_CLOUD_GATEWAY_ROUTES_2_URI=http://notification-service
+
+# -----------------------------------------------------------------
+# 11) Diagnostics
+# -----------------------------------------------------------------
+az containerapp logs show --name gateway --resource-group $RG --follow
+az containerapp logs show --name order-service --resource-group $RG --follow
+az containerapp logs show --name inventory-service --resource-group $RG --follow
+az containerapp logs show --name notification-service --resource-group $RG --follow
+az containerapp logs show --name kafka --resource-group $RG --follow
+
+# -----------------------------------------------------------------
+# 12) Cleanup (optional)
+# -----------------------------------------------------------------
+# az group delete --name $RG --yes --no-wait

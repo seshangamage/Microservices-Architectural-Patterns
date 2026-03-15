@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+
+      # Kafka networking
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+
+      # Single node cluster
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+      # Required for KRaft mode
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    ports:
+      - "8080:8080"
+
+  gateway:
+    image: sliitmicroregistry.azurecr.io/gateway:v1
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_CLOUD_GATEWAY_ROUTES_0_ID: order-service
+      SPRING_CLOUD_GATEWAY_ROUTES_0_URI: http://order-service
+      SPRING_CLOUD_GATEWAY_ROUTES_0_PREDICATES_0: Path=/orders/**
+      SPRING_CLOUD_GATEWAY_ROUTES_1_ID: inventory-service
+      SPRING_CLOUD_GATEWAY_ROUTES_1_URI: http://inventory-service
+      SPRING_CLOUD_GATEWAY_ROUTES_1_PREDICATES_0: Path=/inventory/**
+      SPRING_CLOUD_GATEWAY_ROUTES_2_ID: notification-service
+      SPRING_CLOUD_GATEWAY_ROUTES_2_URI: http://notification-service
+      SPRING_CLOUD_GATEWAY_ROUTES_2_PREDICATES_0: Path=/notify/**
+
+  order-service:
+    image: sliitmicroregistry.azurecr.io/order:v1
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+
+  inventory-service:
+    image: sliitmicroregistry.azurecr.io/inventory:v1
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+
+  notification-service:
+    image: sliitmicroregistry.azurecr.io/notification:v1
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
